@@ -5,7 +5,8 @@
 
 用法（与 .github/workflows/local_transcribe.yml 一致）：
     python local_transcribe.py "https://..." --model base --format txt \
-        --output-dir transcript_output --result-json result.json [--lang zh]
+        --output-dir transcript_output --result-json result.json [--lang zh] \
+        [--player-client default] [--cookies cookies.txt] [--po-token TOKEN]
 
 输出：
   - <output-dir>/<标题>.txt|.md  渲染后的转写文本文件
@@ -34,6 +35,7 @@ DEFAULT_COMPUTE_TYPE = "int8"
 
 # 支持的模型与可选项，与 workflow 的 choice 保持一致
 MODEL_CHOICES = ["tiny", "base", "small", "medium"]
+PLAYER_CLIENT_CHOICES = ["default", "android", "ios", "tv", "web", "mweb"]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -44,6 +46,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", default="transcript_output", help="输出目录，默认 transcript_output")
     parser.add_argument("--result-json", default="result.json", help="结构化结果文件，默认 result.json")
     parser.add_argument("--lang", default="", help="语言提示，如 zh/en/ja；留空自动检测")
+    parser.add_argument(
+        "--player-client",
+        choices=PLAYER_CLIENT_CHOICES,
+        default="default",
+        help="yt-dlp 使用的 YouTube player client，默认 default",
+    )
+    parser.add_argument(
+        "--cookies",
+        default="",
+        help="yt-dlp cookies.txt 文件路径（可选）",
+    )
+    parser.add_argument(
+        "--po-token",
+        default="",
+        help="YouTube PO token（可选，通常与 android 客户端配合使用）",
+    )
     return parser.parse_args()
 
 
@@ -76,10 +94,29 @@ def _proxy_url() -> Optional[str]:
     return proxy
 
 
-def _download_youtube(url: str, workdir: Path, proxy: Optional[str]) -> Tuple[Path, str]:
+def _download_youtube(
+    url: str,
+    workdir: Path,
+    proxy: Optional[str],
+    player_client: str = "default",
+    cookies: Optional[str] = None,
+    po_token: Optional[str] = None,
+) -> Tuple[Path, str]:
     """使用 yt-dlp 抽取最佳音频并转成 16k 单声道 wav。"""
 
     output_tpl = str(workdir / f"{uuid.uuid4().hex}.%(ext)s")
+
+    # 与服务端 downloader 保持一致：android 没有 PO token 时回退到 default，
+    # 避免 yt-dlp 因缺少 GVS PO token 直接失败。
+    player_client = (player_client or "default").strip()
+    po_token = (po_token or "").strip() or None
+    if player_client.lower() == "android" and not po_token:
+        player_client = "default"
+
+    extractor_args = {"youtube": {"player_client": [player_client]}}
+    if po_token:
+        extractor_args["youtube"]["po_token"] = [po_token]
+
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": output_tpl,
@@ -91,7 +128,15 @@ def _download_youtube(url: str, workdir: Path, proxy: Optional[str]) -> Tuple[Pa
         "quiet": True,
         "retries": 3,
         "proxy": proxy,
+        "extractor_args": extractor_args,
     }
+
+    if cookies:
+        cookies_path = Path(cookies).expanduser()
+        if not cookies_path.is_file():
+            raise RuntimeError(f"指定的 cookies 文件不存在：{cookies_path}")
+        ydl_opts["cookiefile"] = str(cookies_path)
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -177,7 +222,14 @@ def main() -> int:
         print(f"来源：{'YouTube' if _is_youtube(url) else '普通直链'}，模型：{args.model}，格式：{output_format}")
 
         if _is_youtube(url):
-            media_path, title = _download_youtube(url, tmpdir, proxy)
+            media_path, title = _download_youtube(
+                url,
+                tmpdir,
+                proxy,
+                player_client=args.player_client,
+                cookies=args.cookies,
+                po_token=args.po_token,
+            )
         else:
             media_path, title = _download_http(url, tmpdir, proxy)
         print(f"已下载媒体，标题：{title}")
