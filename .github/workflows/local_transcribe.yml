@@ -1,0 +1,146 @@
+name: Local Transcribe & Push WeChat
+
+# 方案一：完全在 GitHub Actions runner 上转写，无需自建服务器、数据库、Minio。
+# 流程：填写视频链接 -> runner 下载音频 -> ffmpeg 转 wav -> faster-whisper 转写 -> PushPlus 推送文字到微信。
+#
+# 必填 Secret（Settings → Secrets and variables → Actions）：
+#   PUSHPLUS_TOKEN   PushPlus 的 token
+# 可选 Secret：
+#   YTDLP_PROXY      下载代理，如 http://user:pass@host:port（GitHub runner 访问 YouTube 受限时使用）
+#
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "视频/音频链接（YouTube 或普通 http(s) 直链）"
+        required: true
+        type: string
+      model:
+        description: "Whisper 模型（tiny 最快/base 均衡/small 更准）"
+        required: false
+        default: "base"
+        type: choice
+        options:
+          - tiny
+          - base
+          - small
+          - medium
+      language:
+        description: "语言提示，如 zh / en / ja，留空自动检测"
+        required: false
+        default: ""
+        type: string
+      output_format:
+        description: "输出文件格式（同时会推送纯文本到微信）"
+        required: false
+        default: "txt"
+        type: choice
+        options:
+          - txt
+          - markdown
+      pushplus_topic:
+        description: "PushPlus 群组编码 topic（可选，留空推送给自己）"
+        required: false
+        default: ""
+        type: string
+      push_title:
+        description: "微信推送标题（可选，留空使用视频标题）"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  transcribe-and-push:
+    name: Download, transcribe on runner, push to WeChat
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      PUSHPLUS_TOPIC: ${{ inputs.pushplus_topic }}
+      YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Cache Whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-${{ inputs.model }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "faster-whisper>=1.0.0" "yt-dlp>=2023.11.16"
+
+      - name: Validate secrets
+        run: |
+          if [ -z "$PUSHPLUS_TOKEN" ]; then
+            echo "::error::未配置 secret PUSHPLUS_TOKEN，请在仓库 Settings → Secrets 中添加。"
+            exit 1
+          fi
+
+      - name: Transcribe on runner
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+          MODEL: ${{ inputs.model }}
+          LANGUAGE: ${{ inputs.language }}
+          OUTPUT_FORMAT: ${{ inputs.output_format }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            "$VIDEO_URL"
+            --model "$MODEL"
+            --format "$OUTPUT_FORMAT"
+            --output-dir "transcript_output"
+            --result-json "result.json"
+          )
+
+          if [ -n "$LANGUAGE" ]; then
+            args+=(--lang "$LANGUAGE")
+          fi
+
+          python local_transcribe.py "${args[@]}"
+
+      - name: Push transcript text to WeChat via PushPlus
+        env:
+          PUSH_TITLE: ${{ inputs.push_title }}
+        run: |
+          set -euo pipefail
+
+          args=(--result "result.json" --template txt)
+
+          if [ -n "$PUSHPLUS_TOPIC" ]; then
+            args+=(--topic "$PUSHPLUS_TOPIC")
+          fi
+          if [ -n "$PUSH_TITLE" ]; then
+            args+=(--title "$PUSH_TITLE")
+          fi
+
+          # 只推送文字版内容，不带跳转链接或下载地址。
+          python pushplus_push.py "${args[@]}"
+
+      - name: Upload transcript artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcription-result
+          path: |
+            result.json
+            transcript_output/
+          if-no-files-found: ignore
