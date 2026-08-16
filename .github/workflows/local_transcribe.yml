@@ -6,7 +6,9 @@ name: Local Transcribe & Push WeChat
 # 必填 Secret（Settings → Secrets and variables → Actions）：
 #   PUSHPLUS_TOKEN   PushPlus 的 token
 # 可选 Secret：
-#   YTDLP_PROXY      下载代理，如 http://user:pass@host:port（GitHub runner 访问 YouTube 受限时使用）
+#   YTDLP_PROXY         下载代理，如 http://user:pass@host:port（GitHub runner 访问 YouTube 受限时使用）
+#   YTDLP_COOKIES_B64   浏览器导出的 YouTube cookies.txt 的 Base64 编码（用于解决「Sign in to confirm you're not a bot」）
+#   YOUTUBE_PO_TOKEN    android 客户端所需的 po_token（可选）
 #
 on:
   workflow_dispatch:
@@ -48,6 +50,18 @@ on:
         required: false
         default: ""
         type: string
+      player_client:
+        description: "yt-dlp 使用的 YouTube player client（遇到 bot 拦截/格式缺失时可尝试切换）"
+        required: false
+        default: "default"
+        type: choice
+        options:
+          - default
+          - android
+          - ios
+          - tv
+          - web
+          - mweb
 
 permissions:
   contents: read
@@ -61,6 +75,7 @@ jobs:
       PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
       PUSHPLUS_TOPIC: ${{ inputs.pushplus_topic }}
       YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
+      YOUTUBE_PO_TOKEN: ${{ secrets.YOUTUBE_PO_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -94,12 +109,25 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare YouTube cookies (optional)
+        env:
+          YTDLP_COOKIES_B64: ${{ secrets.YTDLP_COOKIES_B64 }}
+        run: |
+          if [ -n "$YTDLP_COOKIES_B64" ]; then
+            echo "$YTDLP_COOKIES_B64" | base64 -d > cookies.txt
+            echo "已从 secret 生成 cookies.txt（$(wc -l < cookies.txt) 行）"
+          else
+            echo "未配置 YTDLP_COOKIES_B64，跳过 cookies。"
+          fi
+
       - name: Transcribe on runner
         env:
           VIDEO_URL: ${{ inputs.video_url }}
           MODEL: ${{ inputs.model }}
           LANGUAGE: ${{ inputs.language }}
           OUTPUT_FORMAT: ${{ inputs.output_format }}
+          PLAYER_CLIENT: ${{ inputs.player_client }}
+          YOUTUBE_PO_TOKEN: ${{ secrets.YOUTUBE_PO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -109,10 +137,17 @@ jobs:
             --format "$OUTPUT_FORMAT"
             --output-dir "transcript_output"
             --result-json "result.json"
+            --player-client "$PLAYER_CLIENT"
           )
 
           if [ -n "$LANGUAGE" ]; then
             args+=(--lang "$LANGUAGE")
+          fi
+          if [ -f "cookies.txt" ]; then
+            args+=(--cookies "cookies.txt")
+          fi
+          if [ -n "$YOUTUBE_PO_TOKEN" ]; then
+            args+=(--po-token "$YOUTUBE_PO_TOKEN")
           fi
 
           python local_transcribe.py "${args[@]}"
