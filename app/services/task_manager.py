@@ -36,6 +36,8 @@ class TaskManager:
         self._subscribers: Dict[uuid.UUID, List[asyncio.Queue[SSEMessage]]] = defaultdict(list)
         # 本地存储策略下的临时结果（不入库）
         self._local_results: Dict[uuid.UUID, TaskDetailResponse] = {}
+        # 转写文本缓存（内存），供手动输入界面即时展示
+        self._transcripts: Dict[uuid.UUID, str] = {}
         # 记录上一次日志状态，避免重复打印
         self._last_log_state: Dict[uuid.UUID, tuple] = {}
 
@@ -122,6 +124,8 @@ class TaskManager:
                 req.compute_type,
                 req.language,
             )
+            # 缓存转写文本，供手动输入界面即时读取
+            self._transcripts[task_id] = text
             await self._update_status(task_id, progress=80, message="转写完成，开始上传结果")
 
             # 4) 渲染并上传
@@ -271,6 +275,11 @@ class TaskManager:
         if settings.FILE_STORAGE_STRATEGY.lower() == "local" and task_id in self._local_results:
             details.append(self._local_results[task_id])  # type: ignore[list-item]
         return details
+
+    def fetch_transcript(self, task_id: uuid.UUID) -> Optional[str]:
+        """返回转写文本（仅内存缓存），未完成或无结果时返回 None。"""
+
+        return self._transcripts.get(task_id)
 
     async def fetch_task_with_details(self, task_id: uuid.UUID) -> Optional[Tuple[VideoTSTask, List[VideoTSDetail]]]:
         """供接口查询任务和文件信息。"""

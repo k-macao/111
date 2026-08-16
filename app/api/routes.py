@@ -102,6 +102,19 @@ async def stream_task(task_id: uuid.UUID, _: Optional[str] = Depends(verify_sign
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/tasks/{task_id}/transcript")
+async def get_task_transcript(task_id: uuid.UUID, _: Optional[str] = Depends(verify_signature)):
+    """返回任务的转写文本（供手动输入界面即时展示）。"""
+
+    exists = await task_manager.fetch_task_with_details(task_id)
+    if not exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
+    text = task_manager.fetch_transcript(task_id)
+    if text is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="暂无转写文本（可能仍在处理或转写失败）")
+    return {"task_id": str(task_id), "text": text}
+
+
 @router.get("/tasks/{task_id}/download")
 async def download_task_file(task_id: uuid.UUID, _: Optional[str] = Depends(verify_signature)):
     """

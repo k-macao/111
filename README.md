@@ -26,6 +26,7 @@ app/
   models.py            # video_ts_task / video_ts_detail 映射
   schemas.py           # Pydantic 请求 / 响应模型
   main.py              # FastAPI 入口
+  static/index.html    # 手动输入界面（Web UI）
 .env.example           # 环境变量示例
 requirements.txt       # 依赖列表
 ```
@@ -72,11 +73,19 @@ curl -X POST http://127.0.0.1:8000/api/tasks \
 - OpenAI 备用
   - `OPENAI_API_KEY`、`OPENAI_BASE_URL`（留空不影响本地 faster-whisper）。
 
+## 手动输入模块（Web UI）
+- 启动服务后访问 `GET /`（默认 `http://127.0.0.1:8000/`），在输入框中粘贴/输入视频链接即可。
+- 自动识别来源（YouTube / 普通链接），**输入后自动运行**（默认开启，可在页面关闭）；也支持点击「转写」或回车手动触发。
+- 实时展示进度（SSE）、转写文本与结果文件下载链接。
+- 可选输出格式（txt / markdown）与语言提示；`userId` 由浏览器自动生成并保存在本地。
+
 ## 接口速览
 - `GET /health`：健康检查。
+- `GET /`：手动输入模块的 Web 页面。
 - `POST /api/tasks`：创建任务。请求字段：`videoUrl`、`userId`（UUID，必填）、可选 `videoSource`、`model`、`language`、`output_format`(txt|markdown)、`device`、`compute_type`。
 - `GET /api/tasks/{task_id}`：查询状态与结果文件列表。
 - `GET /api/tasks/{task_id}/stream`：SSE 推送进度与最终结果。
+- `GET /api/tasks/{task_id}/transcript`：返回任务的转写文本（内存缓存，供界面即时展示）。
 - `GET /api/tasks/{task_id}/download`：返回最新结果文件的签名下载地址（Minio）或本地路径。
 
 ## 处理流程
