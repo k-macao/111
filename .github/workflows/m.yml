@@ -1,7 +1,7 @@
 name: Manual Transcription Run
 
-# 手动触发：在 GitHub 仓库 Actions 页面选择本工作流，点击 "Run workflow"，
-# 填写视频链接等参数后即可运行。
+# 手动触发：在 GitHub 仓库 Actions 页面选择本工作流，点击 "Run workflow"。
+# 完成后直接把“转写文字版”通过 PushPlus 推送到微信，不跳转外部地址。
 on:
   workflow_dispatch:
     inputs:
@@ -46,8 +46,13 @@ on:
         required: false
         default: ""
         type: string
-      auth_secret:
-        description: "若服务开启了签名认证，在此填入 AUTH_SHARED_SECRET（会被当作 secret 处理）"
+      pushplus_topic:
+        description: "PushPlus 群组编码 topic（可选，留空推送给自己）"
+        required: false
+        default: ""
+        type: string
+      push_title:
+        description: "微信推送标题（可选，留空使用转写文本第一行）"
         required: false
         default: ""
         type: string
@@ -56,10 +61,13 @@ permissions:
   contents: read
 
 jobs:
-  run:
-    name: Submit & watch task
+  run-and-push:
+    name: Transcribe and push text to WeChat
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+      PUSHPLUS_TOPIC: ${{ inputs.pushplus_topic }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,19 +77,85 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Show inputs (secrets masked)
+      - name: Show inputs
         run: |
-          echo "video_url   = ${{ inputs.video_url }}"
-          echo "base_url    = ${{ inputs.base_url }}"
-          echo "format      = ${{ inputs.output_format }}"
-          echo "language    = ${{ inputs.language || '(auto)' }}"
-          echo "model       = ${{ inputs.model || '(server default)' }}"
-          echo "device      = ${{ inputs.device || '(server default)' }}"
-          echo "compute_type= ${{ inputs.compute_type || '(server default)' }}"
+          echo "video_url    = ${{ inputs.video_url }}"
+          echo "base_url     = ${{ inputs.base_url }}"
+          echo "format       = ${{ inputs.output_format }}"
+          echo "language     = ${{ inputs.language || '(auto)' }}"
+          echo "model        = ${{ inputs.model || '(server default)' }}"
+          echo "device       = ${{ inputs.device || '(server default)' }}"
+          echo "compute_type = ${{ inputs.compute_type || '(server default)' }}"
+          if [ -n "$PUSHPLUS_TOKEN" ]; then
+            echo "pushplus     = configured"
+          else
+            echo "pushplus     = missing (secret PUSHPLUS_TOKEN not set)"
+          fi
 
-      - name: Run manual_run.py
+      - name: Run transcription
         env:
           VIDEO_URL: ${{ inputs.video_url }}
           BASE_URL: ${{ inputs.base_url }}
           OUTPUT_FORMAT: ${{ inputs.output_format }}
           LANGUAGE: ${{ inputs.language }}
+          MODEL: ${{ inputs.model }}
+          DEVICE: ${{ inputs.device }}
+          COMPUTE_TYPE: ${{ inputs.compute_type }}
+          USER_ID: ${{ inputs.user_id }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            "$VIDEO_URL"
+            --base-url "$BASE_URL"
+            --format "$OUTPUT_FORMAT"
+            --result-json "result.json"
+          )
+
+          if [ -n "$LANGUAGE" ]; then
+            args+=(--lang "$LANGUAGE")
+          fi
+          if [ -n "$MODEL" ]; then
+            args+=(--model "$MODEL")
+          fi
+          if [ -n "$DEVICE" ]; then
+            args+=(--device "$DEVICE")
+          fi
+          if [ -n "$COMPUTE_TYPE" ]; then
+            args+=(--compute-type "$COMPUTE_TYPE")
+          fi
+          if [ -n "$USER_ID" ]; then
+            args+=(--user-id "$USER_ID")
+          fi
+
+          python manual_run.py "${args[@]}"
+
+      - name: Push transcript text to WeChat via PushPlus
+        if: ${{ env.PUSHPLUS_TOKEN != '' }}
+        env:
+          PUSH_TITLE: ${{ inputs.push_title }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            --result "result.json"
+            --template txt
+          )
+
+          if [ -n "$PUSHPLUS_TOPIC" ]; then
+            args+=(--topic "$PUSHPLUS_TOPIC")
+          fi
+          if [ -n "$PUSH_TITLE" ]; then
+            args+=(--title "$PUSH_TITLE")
+          fi
+
+          # 只推送文字版内容，不带任何跳转链接或下载地址。
+          python pushplus_push.py "${args[@]}"
+
+      - name: Upload result JSON as artifact (no transcript in PushPlus case still useful)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcription-result
+          path: result.json
+          if-no-files-found: ignore
