@@ -1,0 +1,87 @@
+name: Manual Transcription Run
+
+# 手动触发：在 GitHub 仓库 Actions 页面选择本工作流，点击 "Run workflow"，
+# 填写视频链接等参数后即可运行。
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "视频/音频链接（YouTube 或普通 http(s) 直链）"
+        required: true
+        type: string
+      base_url:
+        description: "已部署的转写服务地址，如 https://your-host.example.com"
+        required: true
+        type: string
+      output_format:
+        description: "输出格式"
+        required: false
+        default: "txt"
+        type: choice
+        options:
+          - txt
+          - markdown
+      language:
+        description: "语言提示，如 zh / en / ja，留空自动检测"
+        required: false
+        default: ""
+        type: string
+      model:
+        description: "faster-whisper 模型（留空使用服务端默认）"
+        required: false
+        default: ""
+        type: string
+      device:
+        description: "推理设备 cpu / cuda（留空使用服务端默认）"
+        required: false
+        default: ""
+        type: string
+      compute_type:
+        description: "计算精度，如 int8 / float16（留空使用服务端默认）"
+        required: false
+        default: ""
+        type: string
+      user_id:
+        description: "用户 ID（UUID，留空随机生成）"
+        required: false
+        default: ""
+        type: string
+      auth_secret:
+        description: "若服务开启了签名认证，在此填入 AUTH_SHARED_SECRET（会被当作 secret 处理）"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Submit & watch task
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Show inputs (secrets masked)
+        run: |
+          echo "video_url   = ${{ inputs.video_url }}"
+          echo "base_url    = ${{ inputs.base_url }}"
+          echo "format      = ${{ inputs.output_format }}"
+          echo "language    = ${{ inputs.language || '(auto)' }}"
+          echo "model       = ${{ inputs.model || '(server default)' }}"
+          echo "device      = ${{ inputs.device || '(server default)' }}"
+          echo "compute_type= ${{ inputs.compute_type || '(server default)' }}"
+
+      - name: Run manual_run.py
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+          BASE_URL: ${{ inputs.base_url }}
+          OUTPUT_FORMAT: ${{ inputs.output_format }}
+          LANGUAGE: ${{ inputs.language }}
