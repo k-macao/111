@@ -32,9 +32,18 @@ def _build_proxy_env() -> dict:
 
 
 def is_youtube(url: str) -> bool:
-    """简单判断是否为 YouTube 链接。"""
+    """简单判断是否为 YouTube 链接（按域名精确匹配，避免子域名误判）。"""
 
-    return bool(re.search(r"youtube\.com|youtu\.be", url, re.IGNORECASE))
+    # 去掉 scheme / 端口 / 路径 / query / fragment，仅保留 host 部分
+    host = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url)
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    host = host.split(":", 1)[0].lower().rstrip(".")
+    return (
+        host == "youtube.com"
+        or host.endswith(".youtube.com")
+        or host == "youtu.be"
+        or host.endswith(".youtu.be")
+    )
 
 
 def download_media(
