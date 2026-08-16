@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>视频转写 · 手动输入</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #171a23;
+      --panel-2: #1e2230;
+      --border: #2a2f3f;
+      --text: #e6e9f0;
+      --muted: #8b93a7;
+      --accent: #4f8cff;
+      --accent-2: #6ea8ff;
+      --ok: #2ecc71;
+      --err: #ff5f6d;
+      --warn: #f5a623;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1b2233 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    header { margin-bottom: 28px; }
+    header h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: .5px; }
+    header p { color: var(--muted); margin: 0; font-size: 14px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    input[type="url"], input[type="text"], select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    select { width: auto; }
+    .grow { flex: 1; min-width: 220px; }
+    .opts { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
+    .opt { display: flex; flex-direction: column; gap: 6px; }
+    .opt span { font-size: 12px; color: var(--muted); }
+    .badge {
+      display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px;
+      border: 1px solid var(--border); color: var(--muted); margin-left: 8px; vertical-align: 2px;
+    }
+    .badge.yt { color: var(--accent-2); border-color: rgba(79,140,255,.5); }
+    .toggle { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+    .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+    .btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff; border: none; border-radius: 10px; padding: 11px 22px;
+      font-size: 14px; cursor: pointer; font-weight: 600; transition: filter .15s, transform .05s;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.ghost {
+      background: transparent; border: 1px solid var(--border); color: var(--muted); font-weight: 500;
+    }
+    .status-line { display: flex; align-items: center; gap: 10px; font-size: 14px; min-height: 24px; margin-top: 16px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex: none; }
+    .dot.run { background: var(--accent); animation: pulse 1s infinite; }
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--err); }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+    .bar { height: 8px; background: var(--panel-2); border-radius: 99px; overflow: hidden; margin-top: 14px; }
+    .bar > div {
+      height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: 99px; transition: width .4s ease;
+    }
+    .pct { font-size: 12px; color: var(--muted); text-align: right; margin-top: 4px; }
+    .transcript {
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; white-space: pre-wrap; word-break: break-word; font-size: 15px;
+      line-height: 1.7; max-height: 420px; overflow: auto; margin-top: 12px; min-height: 60px;
+    }
+    .transcript:empty::before { content: "转写结果将显示在这里…"; color: var(--muted); }
+    .err-box {
+      background: rgba(255,95,109,.1); border: 1px solid rgba(255,95,109,.4); color: var(--err);
+      border-radius: 10px; padding: 12px 14px; margin-top: 12px; font-size: 14px; word-break: break-word;
+    }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    a.dl { color: var(--accent-2); text-decoration: none; font-size: 13px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>视频转写 · 手动输入</h1>
+      <p>粘贴或输入 YouTube / 视频链接，自动识别来源并开始转写</p>
+    </header>
+
+    <div class="card">
+      <label for="url">视频链接</label>
+      <div class="row">
+        <input class="grow" type="url" id="url" placeholder="https://www.youtube.com/watch?v=… 或 https://youtu.be/…"
+               autocomplete="off" spellcheck="false" />
+        <button class="btn" id="runBtn" disabled>转写</button>
+      </div>
+      <div class="hint">已识别来源：<span class="badge" id="srcBadge">—</span></div>
+
+      <div class="opts">
+        <div class="opt">
+          <span>输出格式</span>
+          <select id="format">
+            <option value="txt">txt</option>
+            <option value="markdown">markdown</option>
+          </select>
+        </div>
+        <div class="opt">
+          <span>语言（可选，留空自动检测）</span>
+          <input type="text" id="lang" placeholder="如 zh / en / ja" style="width:150px" />
+        </div>
+      </div>
+
+      <label class="toggle">
+        <input type="checkbox" id="autoRun" checked />
+        输入后自动运行
+      </label>
+    </div>
+
+    <div class="card" id="progressCard" style="display:none">
+      <div class="status-line">
+        <span class="dot" id="dot"></span>
+        <span id="statusText">准备中…</span>
+      </div>
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="pct" id="pct">0%</div>
+      <div class="err-box" id="errBox" style="display:none"></div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none">
+      <div class="row" style="justify-content:space-between">
+        <label style="margin:0">转写结果</label>
+        <a class="dl" id="dlLink" href="#" target="_blank" rel="noopener" style="display:none">下载结果文件 ↗</a>
+      </div>
+      <div class="transcript" id="transcript"></div>
+    </div>
+
+    <div class="hint mono" id="taskInfo"></div>
+  </div>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const urlEl = $("url"), runBtn = $("runBtn"), autoRunEl = $("autoRun");
+      const srcBadge = $("srcBadge"), formatEl = $("format"), langEl = $("lang");
+      const progressCard = $("progressCard"), resultCard = $("resultCard");
+      const dot = $("dot"), statusText = $("statusText"), barFill = $("barFill"),
+            pct = $("pct"), errBox = $("errBox"), transcript = $("transcript"),
+            dlLink = $("dlLink"), taskInfo = $("taskInfo");
+
+      const userId = (function () {
+        let id = localStorage.getItem("ts_user_id");
+        if (!id) { id = crypto.randomUUID(); localStorage.setItem("ts_user_id", id); }
+        return id;
+      })();
+
+      let es = null, debounceTimer = null, running = false;
+
+      // —— 与后端 is_youtube 一致的域名精确判断 ——
+      function isYoutube(url) {
+        try {
+          const host = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+          return host === "youtube.com" || host.endsWith(".youtube.com")
+              || host === "youtu.be" || host.endsWith(".youtu.be");
+        } catch { return false; }
+      }
+
+      function validHttpUrl(s) {
+        try { const u = new URL(s); return u.protocol === "http:" || u.protocol === "https:"; }
+        catch { return false; }
+      }
+
+      function updateSourceBadge() {
+        const s = urlEl.value.trim();
+        if (!s) { srcBadge.textContent = "—"; srcBadge.classList.remove("yt"); runBtn.disabled = true; return; }
+        if (!validHttpUrl(s)) {
+          srcBadge.textContent = "链接无效"; srcBadge.classList.remove("yt"); runBtn.disabled = true; return;
+        }
+        const yt = isYoutube(s);
+        srcBadge.textContent = yt ? "YouTube" : "普通链接";
+        srcBadge.classList.toggle("yt", yt);
+        runBtn.disabled = false;
+      }
+
+      function setStatus(state, msg, progress) {
+        progressCard.style.display = "block";
+        dot.className = "dot " + (state === "run" ? "run" : state === "ok" ? "ok" : state === "err" ? "err" : "");
+        if (msg !== undefined && msg !== null && msg !== "") statusText.textContent = msg;
+        if (progress !== undefined && progress !== null) {
+          barFill.style.width = progress + "%";
+          pct.textContent = Math.round(progress) + "%";
+        }
+      }
+
+      function showError(msg) {
+        errBox.style.display = "block";
+        errBox.textContent = "转写失败：" + msg;
+        setStatus("err", "失败", 100);
+        running = false;
+      }
+      function clearError() { errBox.style.display = "none"; errBox.textContent = ""; }
+
+      async function createTask(url) {
+        const body = { videoUrl: url, userId: userId };
+        const lang = langEl.value.trim();
+        if (lang) body.language = lang;
+        body.output_format = formatEl.value;
+
+        const resp = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          let detail = "HTTP " + resp.status;
+          try { const j = await resp.json(); if (j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); }
+          catch {}
+          throw new Error(detail);
+        }
+        return resp.json();
+      }
+
+      function subscribe(taskId) {
+        if (es) es.close();
+        es = new EventSource("/api/tasks/" + taskId + "/stream");
+        es.onmessage = (e) => {
+          let msg; try { msg = JSON.parse(e.data); } catch { return; }
+          const m = msg.message || "";
+          if (msg.status === "processing") setStatus("run", m || "处理中…", msg.progress);
+          else if (msg.status === "completed") {
+            setStatus("ok", "完成", 100);
+            es.close(); running = false;
+            loadTranscript(taskId); loadDownload(taskId);
+          }
+          else if (msg.status === "failed") { es.close(); showError(msg.message || m || "未知错误"); }
+          else setStatus("run", m || "排队中…", msg.progress || 0);
+        };
+        es.onerror = () => { /* 终端态已在 onmessage 中 close，避免自动重连 */ };
+      }
+
+      async function loadTranscript(taskId) {
+        try {
+          const resp = await fetch("/api/tasks/" + taskId + "/transcript");
+          if (resp.ok) {
+            const data = await resp.json();
+            transcript.textContent = data.text || "";
+            resultCard.style.display = "block";
+          }
+        } catch {}
+      }
+
+      async function loadDownload(taskId) {
+        try {
+          const resp = await fetch("/api/tasks/" + taskId + "/download");
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.download_url) {
+              dlLink.href = data.download_url;
+              dlLink.style.display = "inline";
+            }
+          }
+        } catch {}
+      }
+
+      async function run() {
+        const url = urlEl.value.trim();
+        if (!validHttpUrl(url)) { showError("请输入有效的 http(s) 链接"); return; }
+        if (running) return;
+        running = true;
+        clearError();
+        transcript.textContent = "";
+        dlLink.style.display = "none";
+        resultCard.style.display = "none";
+        setStatus("run", "正在创建任务…", 2);
+        taskInfo.textContent = "";
+        try {
+          const task = await createTask(url);
+          taskInfo.textContent = "task_id: " + task.task_id;
+          subscribe(task.task_id);
+        } catch (e) {
+          showError(e.message || String(e));
+        }
+      }
+
+      urlEl.addEventListener("input", () => {
+        updateSourceBadge();
+        clearTimeout(debounceTimer);
+        if (autoRunEl.checked && validHttpUrl(urlEl.value.trim())) {
+          debounceTimer = setTimeout(run, 900);
+        }
+      });
+      urlEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { clearTimeout(debounceTimer); run(); }
+      });
+      runBtn.addEventListener("click", () => { clearTimeout(debounceTimer); run(); });
+
+      updateSourceBadge();
+    })();
+  </script>
+</body>
+</html>

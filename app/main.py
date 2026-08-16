@@ -3,10 +3,12 @@
 import asyncio
 import logging
 import shutil
+from pathlib import Path
 from typing import Dict, Tuple
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 
 from .api.routes import router as api_router
@@ -77,6 +79,14 @@ async def health():
     """健康检查。"""
 
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index():
+    """手动输入模块：返回前端页面。"""
+
+    index_file = Path(__file__).parent / "static" / "index.html"
+    return index_file.read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":
